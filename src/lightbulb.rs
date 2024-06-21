@@ -1,18 +1,10 @@
-
-
-
 use anyhow::*;
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use std::{result::Result::Ok, time::Duration, sync::Arc, collections::HashMap, net::{IpAddr, Ipv4Addr}, str::FromStr};
-use cpal::*;
-
-use tokio::{net::{UdpSocket, TcpStream, TcpListener}, sync::Mutex, task::JoinSet, io::{AsyncWriteExt, AsyncReadExt}, time::{error::Elapsed, sleep}, join};
-use tokio::io::{AsyncBufReadExt, BufReader};
-
-
 use rand::Rng;
-
 use winping::{AsyncPinger, Buffer};
+use std::{result::Result::Ok, time::Duration, sync::Arc, collections::HashMap, net::{IpAddr, Ipv4Addr}, str::FromStr};
+use tokio::{net::{UdpSocket, TcpStream, TcpListener}, sync::Mutex, task::JoinSet, io::{AsyncWriteExt, AsyncReadExt}, time::{error::Elapsed, sleep}};
+
+
 
 #[derive(Clone, Copy, Default)]
 pub struct RGBColor {
@@ -206,7 +198,7 @@ impl LightBulb {
     //Короче смотри, создаешь поле сокет, в котором либо коннектишься к лампочке, либо инициализиурешь слушанье (благодаря этому можно не ебать мозга и тупо писать туда без разницы music mode это или просто команда)
     pub async fn send_command(&self, command: String) -> Result<(), Error> {  
         let result:Result<Result<(), Error>, Elapsed> = tokio::time::timeout(Duration::from_millis(20), async move {
-            println!("Sending Command to {}", self.ip.clone());
+            // println!("Sending Command to {}", self.ip.clone());
             let str_c1 = self.socket.clone().unwrap();
             let mut stream = str_c1.lock().await;
 
@@ -220,8 +212,8 @@ impl LightBulb {
             let mut buf: Vec<u8> = vec![0; 4096];
             let _ = stream.read(&mut buf).await?;
             let response_str: String = String::from_utf8(buf)?;
-            println!("\nResponse from ({})", self.ip.clone());
-            println!("{}", response_str);
+            // println!("\nResponse from ({})", self.ip.clone());
+            // println!("{}", response_str);
             Ok(())
         }).await;
 
@@ -236,19 +228,19 @@ impl LightBulb {
     }
     pub async fn set_color(&self, color: RGBColor, fader_interval: Duration) {
         let comand: String = format!("{{\"id\":3,\"method\":\"set_rgb\",\"params\":[{}, \"smooth\", {}]}}\r\n", color.get24Bit(), fader_interval.as_millis());
-        println!("{}",comand);
+        // println!("{}",comand);
         let _ = self.send_command(comand).await;
     }
 
     pub async fn set_hsv(&self, hue: u16, sat: u8) {
         let comand: String = format!("{{\"id\":3,\"method\":\"set_hsv\",\"params\":[{}, {},\"smooth\", 100]}}\r\n", hue, sat);
-        println!("{}",comand);
+        // println!("{}",comand);
         let _ = self.send_command(comand).await;
     }
 
-    pub async fn set_brightness(&self, bright: u8){
-        let comand: String = format!("{{\"id\":3,\"method\":\"set_bright\",\"params\":[{},\"smooth\", 100]}}\r\n", bright);
-        println!("{}",comand);
+    pub async fn set_brightness(&self, bright: u8, fader_interval: Duration){
+        let comand: String = format!("{{\"id\":3,\"method\":\"set_bright\",\"params\":[{},\"smooth\", {}]}}\r\n", bright, fader_interval.as_millis());
+        // println!("{}",comand);
         let _ = self.send_command(comand).await;
     }
 
@@ -258,7 +250,7 @@ pub struct LightBulbProvider {
     socket: Arc<Mutex<UdpSocket>>,
 }
 
-struct Answer {
+pub struct Answer {
     result: bool,
     id: String
 }
@@ -335,7 +327,7 @@ impl LightBulbProvider {
         }
     }
 
-    pub async fn set_brightness_for_all(self: Arc<LightBulbProvider>, bright: u8){
+    pub async fn set_brightness_for_all(self: Arc<LightBulbProvider>, bright: u8,fader_interval: Duration){
         if self.lightbulbs.lock().await.clone().len() <= 0 {
             return ;
         }
@@ -349,7 +341,7 @@ impl LightBulbProvider {
             set.spawn( async move {
                 let lbs = selfc2.lightbulbs.lock().await.clone();
                 let lb = lbs[&id].lock().await.clone();
-                lb.set_brightness(bright).await;
+                lb.set_brightness(bright, fader_interval).await;
             });
 
             while let Some(res) = set.join_next().await  {
